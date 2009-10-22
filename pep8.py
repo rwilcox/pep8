@@ -100,6 +100,7 @@ import time
 import inspect
 import tokenize
 from optparse import OptionParser
+from optparse import Values
 from keyword import iskeyword
 from fnmatch import fnmatch
 
@@ -697,8 +698,34 @@ class Checker:
         else:
             self.filename = 'stdin'
             self.lines = []
-        self.physical_checks = find_checks('physical_line')
-        self.logical_checks = find_checks('logical_line')
+        pre_physical_checks = find_checks('physical_line')
+        pre_logical_checks = find_checks('logical_line')
+        self.physical_checks = []
+        self.logical_checks = []
+        
+        ignore_keys = {}
+        # The following is ugly, and stolen from <http://liw.iki.fi/liw/log2/2007-12-15b.html>
+        # WD-rpw 10-22-2009
+        classattrs = dir(Values)
+        for name in [_ for _ in dir(options) if _ not in classattrs]:
+            value = getattr(options, name)
+            if value:
+                ignore_keys[name] = value
+        
+        # filter out the checks we've been told to ignore    
+        for curr_check in pre_physical_checks:
+            name, fn, args = curr_check
+            if (ignore_keys.has_key("ignore_" + name)):
+                print "** ignoring " + name
+            else:
+                self.physical_checks.append(curr_check)
+        for curr_check in pre_logical_checks:
+            name, fn, args = curr_check
+            if ignore_keys.has_key("ignore_" + name):
+                print "** ignoring " + name
+            else:
+                self.logical_checks.append(curr_check)
+        
         options.counters['physical lines'] = \
             options.counters.get('physical lines', 0) + len(self.lines)
 
@@ -1099,6 +1126,16 @@ def process_options(arglist=None):
                       help="run regression tests from dir")
     parser.add_option('--doctest', action='store_true',
                       help="run doctest on myself")
+    
+    physical_checks = find_checks('physical_line')
+    logical_checks = find_checks('logical_line')
+    for curr_fn_name, curr_fn, curr_fn_args in physical_checks + logical_checks:
+        docs = curr_fn.func_doc.split("\n")[1]  
+        # TODO: looks odd for some docstrings. WD-rpw 10-22-2009
+
+        parser.add_option("--ignore-" + curr_fn_name, action="store_true",
+            help=docs)
+    
     options, args = parser.parse_args(arglist)
     if options.testsuite:
         args.append(options.testsuite)
